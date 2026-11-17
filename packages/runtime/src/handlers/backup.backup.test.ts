@@ -348,6 +348,38 @@ describe("BackupHandler: two devices", () => {
     await fresh.backup.restore({ password: PASSWORD });
     expect(names(fresh)).toEqual(["Main", "Watched"]);
   });
+
+  it("replaces an unreadable remote file with only this device, and the other device puts its wallets back on its next sync", async () => {
+    const first = await backedUp();
+    const second = await unlocked(first.cloud.account, otherVault);
+    await second.backup.setUp({ password: PASSWORD });
+
+    // A torn write, or a cloud sync that mangled the body: the header
+    // still parses, but the sealed body no longer opens under this backup's key,
+    // so the next write treats the account as holding no other device.
+    const file = decodeBackupFile(first.cloud.account.file!.bytes)!;
+    const corrupted = encodeBackupFile({
+      header: file.header,
+      sealed: crypto.getRandomValues(new Uint8Array(file.sealed.length)),
+    });
+    first.cloud.account.file = { bytes: corrupted, updatedAt: Date.now() };
+
+    await first.backup.markChanged();
+    await first.backup.sync();
+
+    // The write replaces the file with only this device's wallets: the
+    // other device's copies are gone from the account until it syncs again.
+    const fresh = device(first.cloud.account);
+    await fresh.backup.restore({ password: PASSWORD });
+    expect(names(fresh)).toEqual(["Main", "Savings", "Watched"]);
+
+    // The other device still holds its own vault, so its next sync puts them back.
+    await second.backup.markChanged();
+    await second.backup.sync();
+    const joined = device(first.cloud.account);
+    await joined.backup.restore({ password: PASSWORD });
+    expect(names(joined)).toEqual(["Main", "Savings", "Travel", "Watched"]);
+  });
 });
 
 describe("BackupHandler: another vault's backup", () => {
