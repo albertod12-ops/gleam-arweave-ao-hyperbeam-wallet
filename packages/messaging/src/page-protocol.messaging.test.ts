@@ -201,3 +201,20 @@ describe("tagged binary codec", () => {
     expect(decodeTaggedBinary({ __gleamType: "Uint8Array" })).toEqual({ __gleamType: "Uint8Array" });
   });
 });
+
+describe("decodeTaggedBinary prototype pollution", () => {
+  it("keeps a __proto__ key from page JSON as an own property and pollutes nothing", () => {
+    const parsed = JSON.parse('{"__proto__":{"polluted":true},"method":"connect"}') as unknown;
+    const decoded = decodeTaggedBinary(parsed) as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(decoded, "__proto__")).toBe(true);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(decoded.method).toBe("connect");
+  });
+
+  it("keeps a nested __proto__ key as an own property", () => {
+    const parsed = JSON.parse('{"params":{"__proto__":{"polluted":true}}}') as unknown;
+    const decoded = decodeTaggedBinary(parsed) as { params: Record<string, unknown> };
+    expect(Object.prototype.hasOwnProperty.call(decoded.params, "__proto__")).toBe(true);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
